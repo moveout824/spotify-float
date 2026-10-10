@@ -1,0 +1,19 @@
+{
+  "name": "spotify-float",
+  "version": "1.0.0",
+  "description": "Interactive ocean lyrics and bass-reactive waveform visuals for Spotify on Windows.",
+  "main": "main.cjs",
+  "private": true,
+  "author": "moveout824",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "build:native": "native\\build.cmd",
+    "package": "node tools/package.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "@electron/packager": "20.3.0"
+  }
+}
