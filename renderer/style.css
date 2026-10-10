@@ -1,0 +1,26 @@
+@font-face{font-family:OAGothic;src:local('OA Gothic ExtraBold'),url('assets/StageKR.woff2') format('woff2');font-weight:800;font-display:swap}
+@font-face{font-family:StageJP;src:url('assets/StageJP.woff2') format('woff2');font-weight:800;font-display:block}
+@font-face{font-family:StageJPFallback;src:url('assets/StageJPFallback.woff2') format('woff2');font-weight:800;font-display:block}
+@font-face{font-family:StageSC;src:url('assets/StageSC.woff2') format('woff2');font-weight:800;font-display:block}
+@font-face{font-family:StageTC;src:url('assets/StageTC.woff2') format('woff2');font-weight:800;font-display:block}
+:root{color-scheme:dark;--accent:#93ffe3;--muted:rgba(230,242,242,.46)}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#05070c;color:#fff}
+body{font-family:OAGothic,'Malgun Gothic',sans-serif;font-weight:800;cursor:default;user-select:none}
+body.show-controls{cursor:default}button{font:inherit}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block}
+#identity{position:absolute;top:5.7vh;left:6.4vw;right:6.4vw;display:flex;align-items:center;gap:14px;pointer-events:none}
+#mode{font-family:Arial,sans-serif;letter-spacing:.23em;font-size:10px;opacity:.57;font-weight:600}
+.mark{width:19px;height:19px;display:flex;align-items:center;justify-content:center;gap:3px;transform:rotate(-8deg)}
+.mark span{width:2px;background:var(--accent);border-radius:2px;height:8px}.mark span:nth-child(2){height:18px}.mark span:nth-child(3){height:12px}
+#connection{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--muted);font-family:Arial,'Malgun Gothic',sans-serif;font-size:10px;font-weight:400;letter-spacing:.03em}
+#connection i{width:4px;height:4px;border-radius:50%;background:var(--accent);box-shadow:0 0 9px var(--accent);opacity:.8}
+#track-info{position:absolute;bottom:6.9vh;left:6.4vw;right:6.4vw;display:flex;align-items:center;gap:18px;pointer-events:none}
+#cover{width:64px;height:64px;object-fit:cover;border-radius:4px;box-shadow:0 5px 24px #0006;border:1px solid #ffffff0d}
+.track-copy{min-width:0}#artist{font-family:Arial,'Malgun Gothic',sans-serif;font-size:11px;letter-spacing:.13em;color:var(--accent);margin:0 0 8px;font-weight:600;opacity:.84}#title{font-size:clamp(16px,1.6vw,26px);line-height:1.35;margin:0;letter-spacing:-.025em;text-wrap:balance}#album{font-family:Arial,'Malgun Gothic',sans-serif;font-size:11px;line-height:1.4;opacity:.36;margin:7px 0 0;font-weight:400}
+#timeline{position:absolute;left:6.4vw;right:6.4vw;bottom:4.8vh;height:1px;background:#ffffff0d;pointer-events:none}#progress{height:100%;width:0;background:var(--accent);box-shadow:0 0 8px var(--accent);transition:width .18s linear;opacity:.6}
+#hud{position:absolute;right:25px;bottom:24px;display:flex;gap:8px;align-items:center;padding:10px 12px;border:1px solid #ffffff14;background:#080b12d9;backdrop-filter:blur(20px);border-radius:12px;opacity:1;transform:translateY(0);transition:opacity .35s,transform .35s;box-shadow:0 10px 40px #0006;font-size:11px}
+#hud.hidden{opacity:0;transform:translateY(12px);pointer-events:none}.hud-name{letter-spacing:.18em;color:var(--accent);font-family:Arial,sans-serif;margin:0 9px}button{background:#ffffff0b;border:1px solid #ffffff10;border-radius:6px;color:#ffffffaf;padding:7px 10px;cursor:pointer;font-size:11px;transition:background .2s}button:hover{background:#ffffff20;color:white}button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}#offset-label{font-family:Arial,'Malgun Gothic',sans-serif;color:#ffffff6f;margin-left:5px}
+body.lyrics #track-info{gap:14px}body.lyrics #cover{width:54px;height:54px}body.lyrics #title{font-size:clamp(16px,2.7vw,25px)}body.lyrics #artist{font-size:10px}body.lyrics #album{font-size:10px}body.lyrics #identity{top:4.6vh}body.lyrics #hud{left:20px;right:20px;justify-content:center;flex-wrap:wrap}body.lyrics .hud-name{display:none}
+@media(max-width:500px){#connection span{display:none}#cover{width:45px;height:45px}#hud{font-size:10px;gap:5px}button{padding:7px}#offset-label{font-size:10px}#mode{font-size:9px}}
+#gesture-hint{position:absolute;top:11vh;left:6.4vw;right:6.4vw;text-align:center;font-family:Arial,'Malgun Gothic',sans-serif;font-size:11px;font-weight:400;line-height:1.8;color:#ffffff5d;pointer-events:none;animation:hint-fade 9s both}#gesture-hint span{display:block;font-size:9px;letter-spacing:.08em;color:#ffffff2b}body.waveform #gesture-hint{font-size:0}body.waveform #gesture-hint span{font-size:10px}@keyframes hint-fade{0%,8%{opacity:0}18%,62%{opacity:1}100%{opacity:0}}body.dragging,body.dragging #stage{cursor:grabbing}
+#identity,#track-info,#timeline,#hud,#gesture-hint{z-index:2}

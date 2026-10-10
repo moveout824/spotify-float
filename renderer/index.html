@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self'">
+  <title>Spotify · Float</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="stage" aria-label="음악과 함께 떠오르는 가사와 실시간 오디오 파형"></canvas>
+  <div id="hud" class="hidden">
+    <button id="audio-button" title="시스템 오디오에 다시 연결">오디오 연결</button>
+    <span id="offset-label">Lyrics offset 0.0s</span>
+    <button id="offset-minus" title="가사를 0.2초 늦게">−</button>
+    <button id="offset-plus" title="가사를 0.2초 빠르게">+</button>
+    <button id="close-button" title="Esc">Close</button>
+  </div>
+  <script src="hdr.js"></script>
+  <script src="stage.js"></script>
+</body>
+</html>
