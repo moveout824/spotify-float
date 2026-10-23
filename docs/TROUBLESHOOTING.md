@@ -45,7 +45,7 @@ Windows speaker volume is not the motion-speed control. Motion uses the captured
 
 ## The waveform moves after a pause or silent section
 
-The current native path checks a recent 512-sample raw RMS window and clears old wave/beat state on silence. Its core also stays outside the moving surface-refraction displacement.
+The current native path checks a recent 256-sample raw RMS window. On silence it freezes shape updates and briefly reduces amplitude, then clears settled wave/beat state. A short settling fade is expected; continued oscillation is not. Its core also stays outside moving surface-refraction displacement.
 
 If motion continues, first make sure no local Spotify audio is still playing and that the installed app and native helper came from the **same release**. An older helper with a newer app can provide a different packet layout or silence behavior. Re-extract and reinstall a matched release, then reconnect audio.
 
@@ -135,3 +135,15 @@ Please include:
 For screenshots, use your own demo phrases when possible. Remove private installation keys, user-specific paths and unnecessary personal metadata from logs. **Do not attach PCM recordings, Spotify credentials, complete private profiles or actual song-lyric captures.**
 
 [Open an issue](https://github.com/moveout824/spotify-float/issues)
+
+## The button is visible but no visual window opens after sign-in
+
+The Spotify extension and background helper are separate. Use `Single-mode.cmd` or `Dual-mode.cmd` from the extracted release folder to start the helper, then try the button again. Run `Repair-startup.cmd` to register the current folder's background task. In Task Scheduler, `Spotify Float Background` should point to this folder's `app/SpotifyFloat.exe --background` and run for your current interactive user. Do not request administrator privileges unless your own Windows policy requires them.
+
+Before upgrading, quit the old helper through its tray menu. Esc closes only its visible windows. Keep the new app, native helper and extension from the same release together, and rerun `install.cmd` so their local bridge key matches.
+
+## Waveform timing or ghosted movement
+
+Version 1.0.1 separates rapid music/kick envelopes from gentler curve geometry and limits GPU queue depth. Keep Spotify playing locally and the Float window open while judging timing. A closed/minimized window or remote Spotify Connect playback cannot provide a useful live synchronization check.
+
+Compare after extracting a complete matched release. Heavy GPU work in another application can still reduce rendering cadence. Headphones, USB interfaces, Bluetooth and driver processing add different output delays; synthetic tests are not an acoustic calibration of that path. No fixed device compensation is applied automatically.

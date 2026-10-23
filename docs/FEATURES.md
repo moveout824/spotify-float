@@ -44,11 +44,11 @@ Missing lyrics are never generated. The app preserves source wording and does no
 
 ## Typography and interaction
 
-Lines appear with a typing-style reveal. They then rise through the scene while individual characters spread apart. Per-character drift, depth scaling, roll, pitch and yaw create the impression of light objects floating in water.
+Lines rise into view from below and gradually separate as they float through the scene. Per-character drift, depth scaling, roll, pitch and yaw create the impression of light objects floating in water.
 
 Character placement and hit testing use loaded font metrics. Font readiness is checked before layout; switching to a required fallback invalidates the relevant layout caches.
 
-The mouse can stir a small fluid-velocity field, grab a glyph and release it with momentum. Interaction includes translational inertia, angular motion, nearby glyph contacts and bubble responses. Collision handling is activated for manipulated glyphs, so dragging and throwing are more physical than simply moving a text box.
+The mouse can stir a small fluid-velocity field, grab a glyph and release it with momentum. Interaction includes translational inertia, angular motion, nearby glyph contacts and bubble responses. Soft contacts apply between visible glyphs, including during dragging and throwing.
 
 Mouse-driven flow defaults to **0.35 strength**. This keeps the interaction gentle enough for the text and bubbles to remain readable.
 
@@ -71,17 +71,17 @@ The helper emits analysis packets through a local pipe. It does not write WAV re
 | Raw low-frequency energy | Drive bass body and kick-onset thickness |
 | Spectrum / normalized bands | Support visual response and analysis |
 
-The waveform uses a 2048-sample analysis window at 44.1 kHz. A separate **512-sample raw RMS window**, about **11.6 ms**, gives the silence/motion path a much faster view of current audio. Peak normalization is therefore not reused as a fake loudness meter.
+The helper captures stereo **float32 PCM at 44.1 kHz**. A 2048-sample window supplies the actual waveform and FFT. A separate **256-sample raw RMS window**, about **5.8 ms**, detects current sound/silence. Short causal power envelopes use **10 ms** for full-band level and **12 ms** after a **35–180 Hz** bass filter. These time constants describe the analysis filters; they are not guarantees of acoustic latency. Peak normalization is not reused as a fake loudness meter.
 
-Near-silent source windows are cleared instead of replaying an old ring-buffer shape. Pausing, losing the track or disconnecting local audio also clears active wave/beat state. A Spotify Connect session playing on another device can supply track metadata while producing no local signal to visualize.
+Float capture preserves quiet music rather than repeatedly switching it off at a fixed 16-bit loudness threshold. When current audio becomes silent or capture disconnects, the renderer stops sampling new geometry, holds the current shape and reduces its visible height with a short **55 ms exponential release**. Most amplitude is gone after roughly 0.13 seconds; the state is cleared only after it has settled. A Spotify Connect session playing on another device can supply track metadata while producing no local signal to visualize.
 
 ## The waveform
 
-Spatial anti-aliasing turns the sampled signal into a readable curve. A short **35 ms C1-continuous morph** connects incoming updates while carrying the previous derivative forward. The goal is a fluid line that keeps transient detail, not a long visual delay.
+Spatial anti-aliasing reduces the 2048 PCM samples to **33 curve knots**. Phase alignment and a critically damped, velocity-bounded geometry filter reduce rapid shape changes. Height and kick accents use a separate fast envelope, so beat response does not wait for the slower shape to catch up. Only smooth curves are rendered; rectangular and hybrid modes are not included.
 
-The current path does not use Hampel/outlier removal to erase real musical peaks. Its native stream is roughly 50 analysis updates per second, while the displayed curve can update at the monitor's refresh rate.
+The current path does not use Hampel/outlier removal to erase real musical peaks. The helper requests a minimum **10 ms** analysis interval; actual packet cadence depends on WASAPI and Windows scheduling. The displayed curve follows the monitor's rendering cadence. Incoming PCM leads slower Spotify playback metadata for waveform activity. Stale packets expire after 100 ms instead of driving an old shape indefinitely.
 
-Raw energy in the approximate **35–150 Hz** bass region, together with positive spectral changes and onset detection, drives the core width. The white core varies smoothly over roughly **1.5–5 CSS pixels**, depending on bass body and kicks. This affects the line's thickness separately from the overall waveform amplitude.
+Raw causal energy in the approximate **35–180 Hz** bass region, together with positive envelope changes and onset detection, drives the core width. Averaging carrier-cycle power prevents a sustained bass note from being treated as repeated new kicks. The white core varies smoothly over roughly **1.5–5 CSS pixels**, depending on bass body and kicks. This affects the line's thickness separately from the overall waveform amplitude.
 
 The progress treatment distinguishes consumed and remaining portions. The curve has tapered ends, and clicking it seeks within the current song. During track changes, progress fades out and back into the new track instead of animating through a long, incorrect seek.
 
@@ -126,7 +126,7 @@ The glyph mask has tighter diffusion for clearer light boundaries. Waveform emis
 | Glyph radial exposure | 1.52 |
 | Wave radial exposure | 35% of glyph exposure |
 | Negative waveform shadow | Disabled |
-| HDR waveform white floor | Approximately 2.15 × reference white, on the actual white stroke |
+| HDR waveform white floor | Approximately 1.55 × reference white, on the actual white stroke |
 | Background ray contribution in wave/combined mode | 80%; the ocean base remains unchanged |
 
 The white lift is gated by the real waveform alpha and its native white pixels. It does not redraw a thicker duplicate curve. Values above reference white require the actual extended-range display path; SDR output cannot show that extra luminance.
@@ -146,7 +146,7 @@ Combined mode packs glyph/wave masks into R/G channels and integrates both in on
 
 The output uses the actual display cadence through the renderer's animation loop. HDR is enabled only when the browser/display path reports high dynamic range and accepts an extended-range floating-point canvas. The HDR configuration uses `rgba16float`, Display-P3 and extended tone mapping. Unsupported systems use the available SDR path; disabling hardware acceleration can also remove advanced optical effects.
 
-The 4K base is copied into a GPU texture and combined with optical light in the final canvas. A single opaque composition avoids an additional transparent HDR layer over the visible base. Intermediate optical fields use lower resolution while the final output buffer, text and waveform retain 4K dimensions.
+The 4K base is copied into a GPU texture and combined with optical light in the final canvas. A single opaque composition avoids an additional transparent HDR layer over the visible base. Intermediate optical fields use lower resolution while the final output buffer, text and waveform retain 4K dimensions. Each renderer allows at most **two GPU frames in flight**. While the GPU is busy, audio and simulation still advance; old canvas pictures are not queued indefinitely. GPU resources are released when the page is torn down.
 
 Optional timestamp queries measure GPU pass time asynchronously. They are diagnostics, not a promise of the entire application's frame time: presentation, canvas copying, drivers and display composition can cost additional time.
 
@@ -203,3 +203,13 @@ Audio samples and spectrum data stay in the live processing path. Settings and t
 - [M PLUS fonts](https://github.com/coz-m/MPLUS_FONTS) and [M PLUS 1p's OFL notice](https://github.com/google/fonts/blob/main/ofl/mplus1p/OFL.txt).
 
 The playback-bar icon is an image-generated raster asset adapted to the small native control size. Project screenshots use self-written demo phrases and do not redistribute Spotify music or actual song lyrics. PNG previews are SDR captures of an HDR-capable renderer.
+
+## Validation and timing limits
+
+The current build passes five renderer profiles (lyrics, waveform, native waveform, combined landscape and combined portrait), a seven-onset synthetic 120 BPM sequence, and native level/bass envelope checks. Quiet input remains measurable and sustained carrier cycles are suppressed before onset detection.
+
+Synthetic and packet-to-renderer checks do not include the output device's DAC, driver, processing or acoustic delay. A live headphone/speaker synchronization test was deferred. No universal audio-delay compensation is claimed.
+
+## Background startup
+
+The Windows installer registers `Spotify Float Background` for the current interactive user at limited privilege. It launches `SpotifyFloat.exe --background` at sign-in, supports battery operation and retries failures. The visual windows remain closed until requested. `Repair-startup.cmd` updates this task if the installation folder moves. If local policy prevents task registration, manual launch still works and the installer explains how to retry.
