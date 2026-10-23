@@ -10,6 +10,19 @@ Turn your music into a little underwater stage. Lyrics appear, drift apart and f
 
 [Download the latest release](https://github.com/moveout824/spotify-float/releases/latest) · [All features and technical details](docs/FEATURES.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
 
+## Version 1.0.1
+
+The current release uses smoother curve geometry with separate, fast music and kick envelopes. Quiet tracks remain visible, pause/resume settles naturally, and GPU backpressure limits the queue of old frames. The waveform stays curved throughout. See the [changelog](CHANGELOG.md).
+
+### Updating an existing installation
+
+1. Quit the old **Spotify Float helper from its tray menu**. Closing its visuals with Esc leaves the helper running.
+2. Extract the new Windows ZIP into its own folder. Optionally copy your old `app/state/stage-config.json` into the new folder's `app/state/` to keep your local settings. Keep that private file on your computer.
+3. Run `install.cmd` from the new folder. This reapplies the button and updates the background startup path.
+4. Play Spotify locally and use Float beside Repeat. Keep the previous folder until the new copy works.
+
+The four screenshots illustrate the ocean's visual style. Animation and audio response were refined in 1.0.1.
+
 ## Start here
 
 1. Install and open the **Spotify desktop app** on Windows 11. Sign in and make sure a song plays on this computer.
@@ -27,6 +40,7 @@ You do not need Node.js or Visual Studio to use a packaged release.
 | Everything on one monitor | `Single-mode.cmd` | Floating lyrics behind the foreground waveform |
 | Lyrics and waveform on separate monitors | `Dual-mode.cmd` | A lyrics screen and a waveform screen |
 | Restore a missing Spotify button | `Repair-button.cmd` | Reapply the button integration |
+| Restore background startup | `Repair-startup.cmd` | Register the current folder as the sign-in helper |
 
 You can also change modes from the **Spotify Float tray icon**. A computer with one display automatically uses single-monitor mode. In dual mode, a portrait display is preferred for lyrics when one is available.
 
@@ -46,7 +60,7 @@ The light follows the real projected letter shapes. It stays present while the v
 
 The native audio helper captures **Spotify and its child processes**, rather than the entire Windows sound mix. Notifications, another browser and other media players are outside that selected process tree.
 
-The waveform is peak-normalized for readability. Its motion comes from the real audio, with spatial anti-aliasing and a short **35 ms** continuous transition between updates. Bass and kick onsets make the white core thicken smoothly, from about **1.5 to 5 CSS pixels**. Silence clears the wave's motion instead of leaving it dancing on old data.
+The waveform is peak-normalized for readability. Fast causal music and bass envelopes drive its height and the white core's **1.5 to 5 CSS pixel** thickness. Its phase-aligned curve moves more gently, with critically damped geometry, so a sharp beat does not require the whole shape to jump. On silence, the shape stops changing and its height fades to the baseline. The native capture follows actual PCM rather than waiting for Spotify's slower play/pause metadata.
 
 The waveform emits its own softer light. Its original white core receives a positive HDR lift where supported, and stays anchored to the audio geometry. There is **no dark shadow ribbon behind the waveform**.
 
@@ -89,6 +103,8 @@ The initial lyric correction is **+300 ms**. In single-monitor mode the waveform
 | Network | Needed for Spotify and for lyric lookup when an online source is used |
 
 The Spotify-only capture API requires **Windows build 20348 or later**. This release targets Windows 11; ordinary consumer Windows 10 installations are not supported by its native capture path. See [Microsoft's process-loopback sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/).
+
+Synthetic renderer and native-envelope checks pass, including seven expected kicks in a 120 BPM test sequence. These tests do not measure the sound reaching a particular pair of headphones or speakers; live acoustic synchronization remains unverified.
 
 The renderer uses a 4K output canvas and follows the display's refresh rate. Actual frame rate depends on your GPU, drivers, monitor layout and other workloads. **120 FPS is not guaranteed on every computer.** SDR displays can still use the app; actual HDR highlights appear only when the complete HDR path is available. [Enable or check HDR in Windows](https://support.microsoft.com/en-us/windows/hardware/display-graphics/hdr-settings-in-windows).
 

@@ -66,7 +66,7 @@ function startNativeAudio(){
     while(audioBuffer.length>=3108){
       if(audioBuffer.readUInt32LE(0)!==0x46415455){audioBuffer=audioBuffer.subarray(1);continue;}
       const frame=audioBuffer.subarray(0,3108);audioBuffer=audioBuffer.subarray(3108);nativeStatus.connected=true;nativeStatus.frames++;
-      const audio={rms:frame.readFloatLE(8),bass:frame.readFloatLE(12),treble:frame.readFloatLE(16),musicRms:frame.readFloatLE(20),musicPeak:frame.readFloatLE(24),bassRms:frame.readFloatLE(28),bassAmplitude:frame.readFloatLE(32),wave:new Uint8Array(frame.subarray(36,2084)),fft:new Uint8Array(frame.subarray(2084,3108)),connected:true,normalized:true,peakReference:'live-music-window',source:'Spotify',pid:nativeStatus.pid};
+      const audio={sequence:frame.readUInt32LE(4),rms:frame.readFloatLE(8),bass:frame.readFloatLE(12),treble:frame.readFloatLE(16),musicRms:frame.readFloatLE(20),musicPeak:frame.readFloatLE(24),bassRms:frame.readFloatLE(28),bassAmplitude:frame.readFloatLE(32),wave:new Uint8Array(frame.subarray(36,2084)),fft:new Uint8Array(frame.subarray(2084,3108)),connected:true,normalized:true,peakReference:'live-music-window',source:'Spotify',pid:nativeStatus.pid};
       state.audio=audio;for(const win of windows)if(!win.isDestroyed())win.webContents.send('stage-state',{audio});
     }
   });
@@ -137,7 +137,12 @@ function startServer(){
     if(req.url==='/health'&&req.method==='GET'){res.end(JSON.stringify({name:'SpotifyStage',active,mode:currentMode()}));return;}
     const key=req.headers['x-stage-key'];
     if(typeof key!=='string'||key.length!==config.key.length||!crypto.timingSafeEqual(Buffer.from(key),Buffer.from(config.key))){res.writeHead(401);res.end(JSON.stringify({error:'Unauthorized'}));return;}
-    if(req.url==='/diagnostics'&&req.method==='GET'){res.end(JSON.stringify({active,mode:currentMode(),lyricOffset:Number.isFinite(config.offset)?config.offset:300,displays:displays(),state:{...state,audio:state.audio?{rms:state.audio.rms,bass:state.audio.bass,treble:state.audio.treble,musicRms:state.audio.musicRms,musicPeak:state.audio.musicPeak,bassRms:state.audio.bassRms,bassAmplitude:state.audio.bassAmplitude,connected:state.audio.connected,normalized:state.audio.normalized,peakReference:state.audio.peakReference,source:state.audio.source,pid:state.audio.pid}:null,lyrics:state.lyrics?{...state.lyrics,lines:state.lyrics.lines.length}:null},telemetry:[...telemetry.values()],nativeAudio:nativeStatus,gpu:app.getGPUFeatureStatus(),gpuDevices:gpuInfo?.gpuDevice}));return;}
+    if((req.url==='/diagnostics'||req.url==='/diagnostics?live=1')&&req.method==='GET'){
+      // Fixed, read-only stats from our own renderer for on-demand timing QA.
+      // Normal operation keeps its existing one-second telemetry cadence.
+      const report=req.url.endsWith('?live=1')?(await Promise.all(windows.filter(w=>!w.isDestroyed()).map(w=>w.webContents.executeJavaScript('window.__stageTest ? ({...window.__stageTest.stats(),hdr:window.StageHDR?.stats?.()||null}) : null').catch(()=>null)))).filter(Boolean):[...telemetry.values()];
+      res.end(JSON.stringify({active,mode:currentMode(),lyricOffset:Number.isFinite(config.offset)?config.offset:300,displays:displays(),state:{...state,audio:state.audio?{sequence:state.audio.sequence,rms:state.audio.rms,bass:state.audio.bass,treble:state.audio.treble,musicRms:state.audio.musicRms,musicPeak:state.audio.musicPeak,bassRms:state.audio.bassRms,bassAmplitude:state.audio.bassAmplitude,connected:state.audio.connected,normalized:state.audio.normalized,peakReference:state.audio.peakReference,source:state.audio.source,pid:state.audio.pid}:null,lyrics:state.lyrics?{...state.lyrics,lines:state.lyrics.lines.length}:null},telemetry:report,nativeAudio:nativeStatus,gpu:app.getGPUFeatureStatus(),gpuDevices:gpuInfo?.gpuDevice}));return;
+    }
     if(req.method!=='POST'){res.writeHead(405);res.end();return;}
     let data='',tooLarge=false;
     for await(const chunk of req){data+=chunk;if(data.length>512000){tooLarge=true;break;}}
