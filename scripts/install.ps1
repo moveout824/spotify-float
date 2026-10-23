@@ -76,6 +76,12 @@ try {
     Write-Host 'Adding the Float button. Spotify may restart briefly...'
     Run-Spicetify -Arguments @('config', 'extensions', 'spotify-stage.js')
     Run-Spicetify -Arguments @('backup', 'apply')
+    try {
+        & (Join-Path $PSScriptRoot 'startup.ps1')
+    } catch {
+        Write-Host 'Automatic startup could not be registered. The app can still run now.' -ForegroundColor Yellow
+        Write-Host 'Run Repair-startup.cmd later to retry, or launch Single-mode.cmd / Dual-mode.cmd manually.'
+    }
     Start-Process -FilePath $floatApp -ArgumentList '--background' -WindowStyle Hidden
     Write-Host ''
     Write-Host 'Ready! Play a song, then click Float immediately beside Spotify repeat.' -ForegroundColor Green
