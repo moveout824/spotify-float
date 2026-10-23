@@ -403,7 +403,7 @@ fn surfaceLighting(uv: vec2f) -> SurfaceLight {
   return vec4f(encode(max(display,vec3f(0.0)))*alpha,alpha);
 }`;
 
-  let canvas, context, device, uniform, pipeline, bindGroup;
+  let canvas, context, device, uniform, pipeline, bindGroup,framesInFlight=0;
   let volumePipeline, volumeGroup, volumeUniformGroup, volumeTexture, volumeView, densityTexture;
   let cookiePipeline,cookieGroup,cookieUniformGroup,cookieTexture,cookieView;
   let textPipeline,textUniformGroup,textSourceGroup,textTexture,textView,textEnabled=false;
@@ -624,6 +624,7 @@ fn surfaceLighting(uv: vec2f) -> SurfaceLight {
   }
   async function initialize(nextConfig) {
     const token = ++generation;
+    framesInFlight=0;status.framesInFlight=0;status.maxFramesInFlight=2;
     config = {...nextConfig};
     hide(null);
     if(config.opaqueComposite)opaqueFallbackReason=null;
@@ -791,6 +792,7 @@ fn surfaceLighting(uv: vec2f) -> SurfaceLight {
   }
   function update(frame = {}) {
     if (!status.ready || !device || document.hidden) return false;
+    if(framesInFlight>=2){status.skippedBusyFrames=(status.skippedBusyFrames||0)+1;return false;}
     try {
       const submittedAt=performance.now();
       if(opaqueMode) {
@@ -901,6 +903,8 @@ fn surfaceLighting(uv: vec2f) -> SurfaceLight {
         encoder.copyBufferToBuffer(measure.resolveBuffer,0,measure.readBuffer,0,16);
       }
       device.queue.submit([encoder.finish()]);
+      const submittedDevice=device,submittedGeneration=generation;framesInFlight++;status.framesInFlight=framesInFlight;
+      void submittedDevice.queue.onSubmittedWorkDone().catch(()=>{}).then(()=>{if(device===submittedDevice&&generation===submittedGeneration){framesInFlight=Math.max(0,framesInFlight-1);status.framesInFlight=framesInFlight;}});
       if(opaqueMode) {
         // opacity preserves layout, canvas drawing and all existing hit tests.
         stageCanvas.style.opacity='0';
@@ -917,8 +921,10 @@ fn surfaceLighting(uv: vec2f) -> SurfaceLight {
     hide(null);
     context?.unconfigure();
     releaseFields();
+    device?.destroy();device=null;framesInFlight=0;status.framesInFlight=0;
   }
-  window.StageHDR = Object.freeze({init,update,stats,destroy});
+  window.StageHDR = Object.freeze({init,update,stats,destroy,canUpdate:()=>!status.ready||framesInFlight<2});
+  addEventListener('pagehide',destroy);
   // A display/Windows HDR switch changes capability without making a second RAF.
   try {
     matchMedia('(dynamic-range: high)').addEventListener('change', () => {

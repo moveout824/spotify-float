@@ -13,10 +13,10 @@
   let palette=[194,211,178], desiredPalette=[194,211,178],artOffsets=[0,0,0],desiredArtOffsets=[0,0,0], layoutCache=new Map(), lastCue=-1;
   let analyser=null, audioContext=null, captureStream=null, capturePending=false, captureFailed=false;
   let timeData=new Uint8Array(2048), frequencyData=new Uint8Array(1024), testAudio=null, testNow=null,testMotion=null;
-  let rms=0,bass=0,treble=0,waveGain=1,musicSpeed=0,musicMotionSpeed=0,musicDbFS=-140,rayMotionTime=0,waveSoundActive=false,bassReference=1e-6,bassBaseline=0,lastBassRms=0,bassBody=0,kickDrive=0,kickEnvelope=0,kickHold=0,lastKickTime=-Infinity,renderedGlyphs=0,frames=0, hudTimer=null, captureAttempts=0,lastAudioReportAt=0;
+  let rms=0,bass=0,treble=0,waveGain=1,waveEnvelope=0,lastAudioAt=-Infinity,musicSpeed=0,musicMotionSpeed=0,musicDbFS=-140,rayMotionTime=0,waveSoundActive=false,bassReference=1e-9,bassBaseline=0,lastBassRms=0,bassBody=0,kickDrive=0,kickEnvelope=0,kickHold=0,lastKickTime=-Infinity,beatTime=0,kickCount=0,renderedGlyphs=0,frames=0, hudTimer=null, captureAttempts=0,lastAudioReportAt=0;
   let oceanRaster=null,oceanRasterKey='';const bubbleSprites=new Map(),waveGradients=new Map();
   const displayWave=new Float32Array(33),targetWave=new Float32Array(33),fromWave=new Float32Array(33),waveVelocity=new Float32Array(33),fromVelocity=new Float32Array(33),filteredWave=new Float32Array(33),liveCues=new Set(),cueEntities=new Map();let cohortSerial=0,currentCohort='',displayProgress=0,waveTransition=null,waveHash=null,waveMorphAge=.035,waveThickness=1.65,wavePhaseShift=0,wavePhaseCorrelation=0;
-  const waveKernel=[],kernelRadius=64,morphDuration=.035,MUSIC_SILENCE_FLOOR=5e-5,MAX_WAVE_SPEED=1.5;
+  const waveKernel=[],kernelRadius=64,morphDuration=.035,MUSIC_SILENCE_FLOOR=1e-9,MAX_WAVE_SPEED=1.8;
   for(let i=0;i<33;i++){const center=i/32*2047,indices=[],weights=[],cutoff=.44*32/2047;let sum=0;for(let j=Math.ceil(center-kernelRadius);j<=Math.floor(center+kernelRadius);j++){const x=j-center,phase=2*Math.PI*cutoff*x,w=(Math.abs(phase)<1e-8?1:Math.sin(phase)/phase)*(.5+.5*Math.cos(Math.PI*x/(kernelRadius+1)));indices.push(clampKernelIndex(j));weights.push(w);sum+=w}waveKernel.push({indices:Int16Array.from(indices),weights:Float32Array.from(weights,w=>w/sum)})}
   function clampKernelIndex(j){if(j<0)return -j;if(j>2047)return 4094-j;return j}
   // Stable fluids: semi-Lagrangian velocity advection, viscosity and pressure
@@ -64,7 +64,7 @@
   addEventListener('resize',resize);resize();
   function position(){return Math.max(0,Number(state.position||0)+(state.isPlaying?Math.max(0,(testNow??performance.now())-localReceived):0)+offset)}
   function applyState(next){
-    if(!next)return;let oldPosition=position();state={...state,...next};if(next.position===undefined)state.position=oldPosition-offset;localReceived=performance.now();
+    if(!next)return;let oldPosition=position();state={...state,...next};if(next.position===undefined)state.position=oldPosition-offset;localReceived=performance.now();if(Object.hasOwn(next,'audio'))lastAudioAt=localReceived;
     if(Number.isFinite(next.lyricOffset)){offset=next.lyricOffset;$('offset-label').textContent=`Lyrics offset ${offset>=0?'+':''}${(offset/1000).toFixed(1)}s`}
     const id=state.track?.id||state.track?.title||'',changed=id!==previousId;
     if(changed){for(const e of cueEntities.values())if(e.cohort===currentCohort&&e.orphanedAt===null)e.orphanedAt=motionTime;if(previousId)waveTransition={start:motionTime,from:displayProgress};previousId=id;currentCohort=`${id}::${++cohortSerial}`;liveCues.clear();lastCue=-1;
@@ -82,14 +82,15 @@
   function hexHue(hex){const m=/^#?([0-9a-f]{6})$/i.exec(hex);if(!m)return NaN;const n=parseInt(m[1],16),r=(n>>16)/255,g=(n>>8&255)/255,b=(n&255)/255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;if(!d)return 190;return (((mx===r?(g-b)/d:mx===g?(b-r)/d+2:(r-g)/d+4)*60)%360+360)%360}
   function audioConnected(){return config.nativeAudio?!!state.audio?.connected:!!analyser}
   function stepMusicMotion(dt){const raw=Math.max(0,Number(state.audio?.musicRms)||0),enabled=!!state.track&&!!state.isPlaying&&audioConnected()&&raw>MUSIC_SILENCE_FLOOR;musicDbFS=20*Math.log10(Math.max(1e-7,raw));const target=enabled?clamp((musicDbFS+55)/43,0,1)*1.6:0,rate=target>musicSpeed?2.5:1;musicSpeed=lerp(musicSpeed,target,1-Math.exp(-dt*rate));musicMotionSpeed=enabled?musicSpeed:0;if(enabled)rayMotionTime+=dt*musicMotionSpeed;return enabled}
-  function resetWaveState(){for(const a of [displayWave,targetWave,fromWave,waveVelocity,fromVelocity,filteredWave])a.fill(0);waveMorphAge=morphDuration;waveHash=null;waveThickness=1.65;waveGain=1;wavePhaseShift=wavePhaseCorrelation=0;bassReference=1e-6;bassBaseline=lastBassRms=bassBody=kickDrive=kickEnvelope=kickHold=0;lastKickTime=-Infinity}
+  function resetWaveState(){for(const a of [displayWave,targetWave,fromWave,waveVelocity,fromVelocity,filteredWave])a.fill(0);waveMorphAge=morphDuration;waveHash=null;waveThickness=1.65;waveGain=1;waveEnvelope=0;wavePhaseShift=wavePhaseCorrelation=0;bassReference=1e-9;bassBaseline=lastBassRms=bassBody=kickDrive=kickEnvelope=kickHold=0;lastKickTime=-Infinity}
   function alignedWaveShift(previous,incoming){let oldEnergy=0;for(let i=6;i<27;i++)oldEnergy+=previous[i]**2;if(oldEnergy<.001)return {shift:0,correlation:0};let best=-Infinity,zero=-Infinity,shift=0,bestCorrelation=0;for(let s=-12;s<=12;s++){let dot=0,energy=0,wrapped=false;for(let i=6;i<27;i++){const at=i+s;wrapped||=at<0||at>32;const value=incoming[(at+33)%33];dot+=previous[i]*value;energy+=value*value}const correlation=dot/Math.sqrt(Math.max(1e-12,oldEnergy*energy)),score=correlation-Math.abs(s)*.0035-(wrapped?Math.min(.1,Math.abs(incoming[32]-incoming[0])*.10):0);if(s===0)zero=score;if(score>best){best=score;shift=s;bestCorrelation=correlation}}return best>zero+.06?{shift,correlation:bestCorrelation}:{shift:0,correlation:zero}}
   function stepBassBeat(dt){
-    if(!waveSoundActive){resetWaveState();return}const raw=Math.max(0,Number(state.audio?.bassRms)||0);
-    bassReference=raw>bassReference?lerp(bassReference,raw,1-Math.exp(-dt/.045)):Math.max(1e-6,bassReference*Math.exp(-dt/7));const flux=Math.max(0,raw-bassBaseline)/bassReference,rise=Math.max(0,raw-lastBassRms)/bassReference;
-    if(rise>.10&&flux>.16&&motionTime-lastKickTime>.09){kickDrive=clamp(flux*.95,0,1);kickHold=.05;lastKickTime=motionTime}
-    bassBaseline=lerp(bassBaseline,raw,1-Math.exp(-dt/.6));lastBassRms=raw;const bodyTarget=Math.pow(clamp(raw/bassReference,0,1),.7);bassBody=lerp(bassBody,bodyTarget,1-Math.exp(-dt/(bodyTarget>bassBody?.03:.17)));
-    if(kickHold>0)kickHold-=dt;else kickDrive*=Math.exp(-dt/.17);kickEnvelope=lerp(kickEnvelope,kickDrive,1-Math.exp(-dt/(kickDrive>kickEnvelope?.027:.17)));waveThickness=clamp(1.65+.75*bassBody+2.55*kickEnvelope,1.5,5);
+    beatTime+=dt;const raw=waveSoundActive?Math.max(0,Number(state.audio?.bassRms)||0):0;
+    bassReference=Math.max(1e-9,raw,bassReference*Math.exp(-dt/4));const flux=Math.max(0,raw-bassBaseline)/bassReference,rise=Math.max(0,raw-lastBassRms)/bassReference;
+    if(waveSoundActive&&rise>.12&&flux>.22&&beatTime-lastKickTime>.09){kickDrive=Math.max(kickDrive,clamp(rise*2.8+flux*.25,0,1));kickHold=.015;lastKickTime=beatTime;kickCount++}
+    bassBaseline=lerp(bassBaseline,raw,1-Math.exp(-dt/.18));lastBassRms=raw;const bodyTarget=Math.pow(clamp(raw/bassReference,0,1),.7);bassBody=lerp(bassBody,bodyTarget,1-Math.exp(-dt/(bodyTarget>bassBody?.012:.075)));
+    if(!waveSoundActive){kickDrive=0;kickHold=0}else if(kickHold>0)kickHold-=dt;else kickDrive*=Math.exp(-dt/.085);
+    kickEnvelope=lerp(kickEnvelope,kickDrive,1-Math.exp(-dt/(kickDrive>kickEnvelope?.008:.025)));waveThickness=clamp(1.65+waveEnvelope*(.9*bassBody+2.45*kickEnvelope),1.5,5);
   }
   function updateStatus(){const lyrics=state.lyrics;status=!state.track?'waiting':hasWave?(audioConnected()?'audio-live':config.nativeAudio?'spotify-audio-connecting':captureFailed?'audio-unavailable':'audio-connecting'):(lyrics?.lines?.length?(lyrics.synced?'lyrics-synced':'lyrics-estimated'):!lyrics||lyrics.pending?'lyrics-loading':lyrics.instrumental?'instrumental':'lyrics-unavailable')}
   async function startAudio(){
@@ -112,28 +113,35 @@
     finally{capturePending=false;updateStatus()}
   }
   function sampleAudio(dt){
-    if(role==='lyrics'&&state.audio){const k=1-Math.exp(-dt*8),playing=state.isPlaying&&(!config.nativeAudio||state.audio.connected&&Number(state.audio.musicRms)>MUSIC_SILENCE_FLOOR);waveSoundActive=!!playing;rms=lerp(rms,playing?Number(state.audio.rms||0):0,k);bass=lerp(bass,playing?Number(state.audio.bass||0):0,k);treble=lerp(treble,playing?Number(state.audio.treble||0):0,k);return}
+    const fresh=!config.nativeAudio||!!testAudio||((testNow??performance.now())-lastAudioAt<100&&!!state.audio?.connected);
+    if(role==='lyrics'&&state.audio){const playing=fresh&&(!config.nativeAudio?state.isPlaying:Number(state.audio.musicRms)>MUSIC_SILENCE_FLOOR);waveSoundActive=!!playing;const power=playing?Number(state.audio.rms||0):0,k=1-Math.exp(-dt/(power>rms?.012:.055));rms=lerp(rms,power,k);bass=lerp(bass,playing?Number(state.audio.bass||0):0,k);treble=lerp(treble,playing?Number(state.audio.treble||0):0,k);waveEnvelope=lerp(waveEnvelope,playing?clamp(Math.pow(Math.max(0,power)/.38,.7),0,1):0,k);return}
     let power=0,low=0,high=0;
     if(testAudio){timeData=testAudio.wave;frequencyData=testAudio.fft}
-    else if(config.nativeAudio){const audio=state.audio;if(audio?.connected&&state.isPlaying&&audio.wave?.length===timeData.length){timeData.set(audio.wave);if(audio.fft?.length===frequencyData.length)frequencyData.set(audio.fft);else frequencyData.fill(0)}else{timeData.fill(128);frequencyData.fill(0)}}
+    else if(config.nativeAudio){const audio=state.audio;if(fresh&&audio?.wave?.length===timeData.length){timeData.set(audio.wave);if(audio.fft?.length===frequencyData.length)frequencyData.set(audio.fft);else frequencyData.fill(0)}else{timeData.fill(128);frequencyData.fill(0)}}
     else if(analyser&&state.isPlaying){analyser.getByteTimeDomainData(timeData);analyser.getByteFrequencyData(frequencyData)}
     else{timeData.fill(128);frequencyData.fill(0)}
-    if(state.isPlaying||testAudio){for(let i=0;i<timeData.length;i+=4){const v=(timeData[i]-128)/128;power+=v*v}power=Math.sqrt(power/(timeData.length/4));for(let i=2;i<22;i++)low+=frequencyData[i]/255;for(let i=70;i<180;i++)high+=frequencyData[i]/255;low/=20;high/=110}
-    if(config.nativeAudio&&!testAudio&&state.audio?.connected&&state.isPlaying){const a=state.audio;if(Number.isFinite(a.rms))power=a.rms;if(Number.isFinite(a.bass))low=a.bass;if(Number.isFinite(a.treble))high=a.treble}
-    waveSoundActive=!!state.track&&!!state.isPlaying&&(audioConnected()||!!testAudio)&&(config.nativeAudio&&!testAudio?Number(state.audio?.musicRms)>MUSIC_SILENCE_FLOOR:power>1e-7);
-    if(!waveSoundActive){resetWaveState();rms=bass=treble=0;return}
-    const k=1-Math.exp(-dt*8);rms=lerp(rms,power,k);bass=lerp(bass,low,k);treble=lerp(treble,high,k);
+    if(state.isPlaying||config.nativeAudio||testAudio){for(let i=0;i<timeData.length;i+=4){const v=(timeData[i]-128)/128;power+=v*v}power=Math.sqrt(power/(timeData.length/4));for(let i=2;i<22;i++)low+=frequencyData[i]/255;for(let i=70;i<180;i++)high+=frequencyData[i]/255;low/=20;high/=110}
+    if(config.nativeAudio&&!testAudio&&fresh){const a=state.audio;if(Number.isFinite(a.rms))power=a.rms;if(Number.isFinite(a.bass))low=a.bass;if(Number.isFinite(a.treble))high=a.treble}
+    waveSoundActive=!!state.track&&fresh&&(audioConnected()||!!testAudio)&&(config.nativeAudio&&!testAudio?Number(state.audio?.musicRms)>MUSIC_SILENCE_FLOOR:!!state.isPlaying&&power>1e-7);
+    if(!waveSoundActive){
+      // Stop sampling/moving the old shape immediately, but let its visible
+      // amplitude settle. No invented oscillation and no one-frame reset.
+      const fade=Math.exp(-dt/.055);waveEnvelope*=fade;rms*=fade;bass*=fade;treble*=fade;targetWave.set(displayWave);fromWave.set(displayWave);waveVelocity.fill(0);fromVelocity.fill(0);waveMorphAge=morphDuration;waveHash=null;if(waveEnvelope<.001)resetWaveState();return;
+    }
+    const k=1-Math.exp(-dt/(power>rms?.012:.055));rms=lerp(rms,power,k);bass=lerp(bass,low,k);treble=lerp(treble,high,k);
+    const level=clamp(Math.pow(Math.max(0,power)/.38,.7),0,1);waveEnvelope=lerp(waveEnvelope,level,1-Math.exp(-dt/(level>waveEnvelope?.016:.055)));
     waveGain=config.nativeAudio&&state.audio?.normalized?1:state.isPlaying&&(audioConnected()||testAudio)?clamp(.12/Math.max(.025,power),1,5):1;
     // Proper anti-alias filtering before2048→33decimation; musical spikes are
-    // never rejected. Short35msgeometric morph, raw energy immediate.
+    // never rejected. Phase-stable geometry is critically damped independently
+    // of the fast music envelope. Beat accents do not wait for the shape filter.
     let hashValue=2166136261;for(let j=0;j<timeData.length;j++)hashValue=Math.imul(hashValue^timeData[j],16777619);
     if(hashValue!==waveHash){
       for(let i=0;i<33;i++){const kernel=waveKernel[i];let sum=0;for(let k=0;k<kernel.indices.length;k++)sum+=(timeData[kernel.indices[k]]-128)/128*kernel.weights[k];filteredWave[i]=sum}
       const alignment=alignedWaveShift(displayWave,filteredWave);wavePhaseShift=alignment.shift;wavePhaseCorrelation=alignment.correlation;
       fromWave.set(displayWave);fromVelocity.set(waveVelocity);for(let i=0;i<33;i++)targetWave[i]=filteredWave[(i+alignment.shift+33)%33];waveMorphAge=0;waveHash=hashValue;
     }
-    waveMorphAge=Math.min(morphDuration,waveMorphAge+dt);const u=waveMorphAge/morphDuration,u2=u*u,u3=u2*u,h00=2*u3-3*u2+1,h10=u3-2*u2+u,h01=-2*u3+3*u2,d00=6*u2-6*u,d10=3*u2-4*u+1,d01=-6*u2+6*u;
-    for(let i=0;i<33;i++){const speed=fromVelocity[i],previous=displayWave[i],candidate=clamp(h00*fromWave[i]+h10*morphDuration*speed+h01*targetWave[i],-1,1),bound=MAX_WAVE_SPEED*dt,delta=clamp(candidate-previous,-bound,bound);displayWave[i]=previous+delta;waveVelocity[i]=dt>1e-7&&Math.abs(candidate-previous)>bound?delta/dt:clamp((d00*fromWave[i]+d10*morphDuration*speed+d01*targetWave[i])/morphDuration,-MAX_WAVE_SPEED,MAX_WAVE_SPEED)}
+    waveMorphAge=Math.min(morphDuration,waveMorphAge+dt);const omega=90,decay=Math.exp(-omega*dt);
+    for(let i=0;i<33;i++){const previous=displayWave[i],error=previous-targetWave[i],term=waveVelocity[i]+omega*error,candidate=targetWave[i]+(error+term*dt)*decay,nextVelocity=(waveVelocity[i]-omega*term*dt)*decay,bound=MAX_WAVE_SPEED*dt;displayWave[i]=clamp(previous+clamp(candidate-previous,-bound,bound),-1,1);waveVelocity[i]=clamp(nextVelocity,-MAX_WAVE_SPEED,MAX_WAVE_SPEED)}
   }
   function cloud(x,y,r,idx,alpha){
     const hue=Math.round(palette[idx%3]/5)*5,key=hue;let surface=cloudSprites.get(key);
@@ -297,6 +305,7 @@
     const count=displayWave.length-1;let lastX=width*.055,lastY=wavePoint(0,amplitude)+offsetY;draw.beginPath();draw.moveTo(lastX,lastY);for(let i=1;i<=count;i++){const x=width*(.055+i/count*.89),y=wavePoint(i,amplitude)+offsetY;draw.quadraticCurveTo(lastX,lastY,(lastX+x)/2,(lastY+y)/2);lastX=x;lastY=y}draw.lineTo(lastX,lastY);
   }
   function wavePoint(index,amplitude){const value=displayWave[index]*.92+(displayWave[Math.max(0,index-1)]+displayWave[Math.min(32,index+1)])*.04;return height*.49+value*amplitude*Math.sin(index/(displayWave.length-1)*Math.PI)**2}
+  function waveAmplitude(){return height*.192*waveGain*waveEnvelope*(.55+.30*bassBody+.20*kickEnvelope)}
   function waveHeightAt(f,amplitude){const count=displayWave.length-1,c=clamp(f,0,1)*count;if(c<.5)return lerp(wavePoint(0,amplitude),wavePoint(1,amplitude),c);if(c>count-.5)return lerp(wavePoint(count-1,amplitude),wavePoint(count,amplitude),c-(count-1));const i=Math.floor(c+.5),u=c-i+.5,a=(wavePoint(i-1,amplitude)+wavePoint(i,amplitude))/2,b=wavePoint(i,amplitude),d=(wavePoint(i,amplitude)+wavePoint(i+1,amplitude))/2;return (1-u)**2*a+2*u*(1-u)*b+u*u*d}
   function waveGradient(alpha,index,progress=null,draw=ctx){
     const cacheKey=progress===null?`${draw===ctx?'base':'mask'}:${alpha}:${index}:${palette.map(h=>Math.round(h*2)).join(':')}`:null;if(cacheKey&&waveGradients.has(cacheKey))return waveGradients.get(cacheKey);
@@ -309,7 +318,7 @@
   function waveform(t){
     const centerX=width*.5,centerY=height*.49,base=Math.min(width,height),energy=clamp(rms*3,0,1);
     ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
-    const amplitude=height*.192*waveGain*(1+kickEnvelope*.05+bassBody*.015);
+    const amplitude=waveAmplitude();
     wavePath(amplitude,0,0);ctx.shadowBlur=0;
     const timeline=timelineState(t),trackRatio=timeline.ratio,headX=width*(.055+trackRatio*.89);
     // The signal is also the timeline: consumed audio is luminous, future audio translucent.
@@ -331,12 +340,16 @@
     const renderInterval=1000/Math.max(1,Number(config.refreshRate)||60);
     if(testNow===null&&frames>0&&now-lastFrame<renderInterval-.25){requestAnimationFrame(render);return}
     const begin=performance.now(),rawDt=(now-lastFrame)/1000,dt=clamp(rawDt,0,.08);lastFrame=now;
-    if(testNow===null){fpsWindowFrames++;if(now-fpsWindowStart>=1000){fps=fpsWindowFrames*1000/(now-fpsWindowStart);fpsWindowFrames=0;fpsWindowStart=now}}
+    if(testNow===null&&now-fpsWindowStart>=1000){fps=fpsWindowFrames*1000/(now-fpsWindowStart);fpsWindowFrames=0;fpsWindowStart=now}
     motionTime=testNow===null?(Date.now()-(config.timeOrigin||Date.now()-1000))/1000:(testMotion??position()/1000);
     const modes=[[194,211,178],[156,182,135],[32,195,18]],phase=((motionTime%240)+240)%240/80,mode=Math.floor(phase),transition=smooth(phase-mode);
     for(let i=0;i<3;i++){artOffsets[i]=lerp(artOffsets[i],desiredArtOffsets[i],1-Math.exp(-dt*.9));const from=modes[mode][i],to=modes[(mode+1)%3][i],delta=((to-from+540)%360)-180;desiredPalette[i]=(from+delta*transition+artOffsets[i]+360)%360}
     for(let i=0;i<3;i++){let delta=((desiredPalette[i]-palette[i]+540)%360)-180;palette[i]=(palette[i]+delta*(1-Math.exp(-dt*.8))+360)%360}
-    if(frames%12===0)document.documentElement.style.setProperty('--accent',color(0,1,78,68));sampleAudio(dt);stepBassBeat(dt);const musicPlaying=stepMusicMotion(dt);if(hasWave&&!config.nativeAudio&&now-lastAudioReportAt>50){lastAudioReportAt=now;window.stage?.reportAudio?.({rms,bass,treble})}water.update(dt);stepPhysics(dt);stepFluid(dt,motionTime);hitGlyphs=[];background(motionTime);
+    if(frames%12===0)document.documentElement.style.setProperty('--accent',color(0,1,78,68));sampleAudio(dt);stepBassBeat(dt);const musicPlaying=stepMusicMotion(dt);if(hasWave&&!config.nativeAudio&&now-lastAudioReportAt>50){lastAudioReportAt=now;window.stage?.reportAudio?.({rms,bass,treble})}water.update(dt);stepPhysics(dt);stepFluid(dt,motionTime);
+    // Sample the newest music even when the GPU is busy. Avoid queuing old
+    // pictures/canvas copies behind it: the next displayed frame uses NOW.
+    if(window.StageHDR?.canUpdate?.()===false){if(Date.now()-lastReportAt>1000){lastReportAt=Date.now();window.stage?.report?.({...window.__stageTest.stats(),hdr:window.StageHDR?.stats?.()||null})}if(testNow===null)requestAnimationFrame(render);return}
+    if(testNow===null)fpsWindowFrames++;hitGlyphs=[];background(motionTime);
     textMaskCtx.clearRect(0,0,width,height);if(waveMaskCanvas)waveMaskCtx.clearRect(0,0,width,height);const pos=position();if(hasLyrics)lyrics(motionTime,pos);if(hasWave)waveform(motionTime);
     window.StageHDR?.update?.({time:motionTime,rayMotionTime,musicMotionSpeed,isPlaying:musicPlaying,energy:clamp(rms*3+bass*.35,0,1),hues:palette,role,pointer:{x:pointer.x/width,y:pointer.y/height,xNormalized:pointer.x/width,yNormalized:pointer.y/height},pointerEnergy,textMaskCanvas,waveMaskCanvas});
     frames++;
@@ -355,7 +368,7 @@
     if(speed>35)water.inject(pointer.x,pointer.y,pointer.vx,pointer.vy,Math.min(120,width*.14));
     if(dragged){const g=hitGlyphs.find(g=>g.id===dragged),b=bodyFor(dragged);if(g){b.ox=pointer.x-g.anchorX;b.oy=pointer.y-g.anchorY;b.vx=0;b.vy=0}}
   });
-  function isWaveHit(x,y){if(!hasWave||x<width*.055||x>width*.945)return false;const ratio=clamp((x/width-.055)/.89,0,1);return Math.abs(y-waveHeightAt(ratio,height*.192*waveGain*(1+kickEnvelope*.05+bassBody*.015)))<=Math.max(8,waveThickness*1.5)}
+  function isWaveHit(x,y){if(!hasWave||x<width*.055||x>width*.945)return false;const ratio=clamp((x/width-.055)/.89,0,1);return Math.abs(y-waveHeightAt(ratio,waveAmplitude()))<=Math.max(8,waveThickness*1.5)}
   addEventListener('pointerdown',e=>{if(audioContext?.state==='suspended')audioContext.resume();if(e.target!==canvas||e.button!==0)return;const waveHit=role==='combined'?isWaveHit(e.clientX,e.clientY):hasWave&&Math.abs(e.clientY-height*.49)<height*.26;if(waveHit){seekTap={x:e.clientX,y:e.clientY};return}const g=hitAt(e.clientX,e.clientY);if(g){dragged=g.id;const b=bodyFor(g.id);b.collisionActive=true;b.collisionUntil=motionTime+8;canvas.setPointerCapture(e.pointerId);document.body.classList.add('dragging');e.preventDefault()}});
   function release(){if(dragged){const b=bodyFor(dragged);b.vx=pointer.vx*.65;b.vy=pointer.vy*.65;b.av=clamp(pointer.vx*.0007,-2,2);b.pitchTarget=clamp(-pointer.vy*.00014,-.45,.45);b.yawTarget=clamp(pointer.vx*.00014,-.45,.45);b.collisionActive=true;b.collisionUntil=motionTime+8;dragged=null;document.body.classList.remove('dragging')}}
   addEventListener('pointerup',e=>{if(seekTap){if(Math.hypot(e.clientX-seekTap.x,e.clientY-seekTap.y)<6&&state.track)control({type:'seek',ratio:clamp((e.clientX/width-.055)/.89,0,1)});seekTap=null}release()});addEventListener('pointercancel',()=>{seekTap=null;release()});addEventListener('blur',()=>{seekTap=null;release()});
@@ -369,7 +382,8 @@
   window.__stageTest.stepWave=dt=>sampleAudio(clamp(dt,0,.1));window.__stageTest.waveShape=()=>({display:Array.from(displayWave),target:Array.from(targetWave),velocity:Array.from(waveVelocity),morphAge:waveMorphAge,morphDuration,thickness:waveThickness,phaseShift:wavePhaseShift,phaseCorrelation:wavePhaseCorrelation,maxGeometrySpeed:MAX_WAVE_SPEED});window.__stageTest.alignmentTest=alignedWaveShift;
   window.__stageTest.stepMusic=dt=>stepMusicMotion(clamp(dt,0,.1));window.__stageTest.musicMotion=()=>({rayMotionTime,musicMotionSpeed,musicDbFS});
   window.__stageTest.waveMask=()=>({canvas:waveMaskCanvas,width:waveMaskCanvas?.width||0,height:waveMaskCanvas?.height||0});window.__stageTest.isWaveHit=isWaveHit;
-  window.__stageTest.stepBeat=dt=>stepBassBeat(clamp(dt,0,.1));window.__stageTest.beat=()=>({kickEnvelope,kickDrive,bassBody,bassReference,thickness:waveThickness,active:waveSoundActive});
+  window.__stageTest.stepBeat=dt=>stepBassBeat(clamp(dt,0,.1));window.__stageTest.beat=()=>({kickEnvelope,kickDrive,bassBody,bassReference,thickness:waveThickness,active:waveSoundActive,kickCount,envelope:waveEnvelope,amplitude:waveAmplitude(),clock:beatTime});
+  const baseStats=window.__stageTest.stats;window.__stageTest.stats=()=>({...baseStats(),waveRhythmRevision:'float-music-locked-curve-v14',waveEnvelope,waveAmplitude:waveAmplitude(),kickEnvelope,kickCount,documentHidden:document.hidden,audioPacketAge:config.nativeAudio?(testNow??performance.now())-lastAudioAt:null,audioSequence:state.audio?.sequence??null});
   if(window.stage?.onState)window.stage.onState(applyState);
   window.StageHDR?.init?.(config);
   // Fonts are local and must be ready before measuring the precise initial glyph layout.
