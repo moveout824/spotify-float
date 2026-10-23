@@ -2,6 +2,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..');
+const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
 (async()=>{
   const {packager}=await import('@electron/packager');
   const source=path.join(root,'.build','source');
@@ -10,11 +11,11 @@ const root=path.resolve(__dirname,'..');
   fs.cpSync(path.join(root,'renderer'),path.join(source,'renderer'),{recursive:true});
   const helper=path.join(root,'native','SpotifyAudio.exe');
   if(!fs.existsSync(helper))throw new Error('Run npm run build:native first.');
-  const [runtime]=await packager({dir:source,out:path.join(root,'.build','package'),name:'SpotifyFloat',executableName:'SpotifyFloat',platform:'win32',arch:'x64',electronVersion:'44.7.0',asar:true,overwrite:true,prune:true,extraResource:[helper,path.join(root,'third-party')],appVersion:'1.0.0',win32metadata:{CompanyName:'moveout824',FileDescription:'Spotify Float',ProductName:'Spotify Float'}});
+  const [runtime]=await packager({dir:source,out:path.join(root,'.build','package'),name:'SpotifyFloat',executableName:'SpotifyFloat',platform:'win32',arch:'x64',electronVersion:'44.7.0',asar:true,overwrite:true,prune:true,extraResource:[helper,path.join(root,'third-party')],appVersion:version,win32metadata:{CompanyName:'moveout824',FileDescription:'Spotify Float',ProductName:'Spotify Float'}});
   const release=path.join(root,'dist','SpotifyFloat-Windows-x64');
   fs.mkdirSync(release,{recursive:true});
   fs.cpSync(runtime,path.join(release,'app'),{recursive:true});
-  for(const file of ['install.cmd','Single-mode.cmd','Dual-mode.cmd','Repair-button.cmd','extension.template.js','README.md','LICENSE'])fs.copyFileSync(path.join(root,file),path.join(release,file));
+  for(const file of ['install.cmd','Single-mode.cmd','Dual-mode.cmd','Repair-button.cmd','Repair-startup.cmd','extension.template.js','README.md','CHANGELOG.md','LICENSE'])fs.copyFileSync(path.join(root,file),path.join(release,file));
   for(const folder of ['scripts','docs','third-party'])fs.cpSync(path.join(root,folder),path.join(release,folder),{recursive:true});
   fs.mkdirSync(path.join(release,'renderer','assets'),{recursive:true});
   fs.copyFileSync(path.join(root,'renderer','assets','stage-icon-data.json'),path.join(release,'renderer','assets','stage-icon-data.json'));
