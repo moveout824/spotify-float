@@ -11,5 +11,11 @@ if not defined FLOAT_VS exit /b 1
 call "%FLOAT_VS%\VC\Auxiliary\Build\vcvarsall.bat" x64
 if errorlevel 1 exit /b 1
 if not exist "..\.build\native" mkdir "..\.build\native"
+if /i "%~1"=="--test" (
+  cl /nologo /O2 /EHsc /MT /std:c++17 ..\tests\native-envelopes.cpp /Fo:..\.build\native\NativeEnvelopes.obj /Fe:..\.build\native\NativeEnvelopes.exe
+  if errorlevel 1 exit /b 1
+  ..\.build\native\NativeEnvelopes.exe
+  exit /b
+)
 cl /nologo /O2 /EHsc /MT /std:c++17 /DNTDDI_VERSION=0x0A00000A SpotifyAudio.cpp /Fo:..\.build\native\SpotifyAudio.obj /Fe:SpotifyAudio.exe /link mmdevapi.lib ole32.lib uuid.lib
 exit /b %ERRORLEVEL%

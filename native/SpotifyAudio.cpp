@@ -16,6 +16,7 @@
 #include <array>
 #include <complex>
 #include <algorithm>
+#include "AudioEnvelope.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -78,8 +79,8 @@ int wmain(int argc,wchar_t** argv){
     if(FAILED(result))return fail("Activate",result);
     if(WaitForSingleObject(activation->ready,10000)!=WAIT_OBJECT_0)return fail("Activation timeout",E_FAIL);
     if(FAILED(activation->result))return fail("Activation result",activation->result);
-    WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=2;format.nSamplesPerSec=44100;format.wBitsPerSample=16;
-    format.nBlockAlign=4;format.nAvgBytesPerSec=176400;
+    WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_IEEE_FLOAT;format.nChannels=2;format.nSamplesPerSec=44100;format.wBitsPerSample=32;
+    format.nBlockAlign=8;format.nAvgBytesPerSec=352800;
     result=activation->client->Initialize(AUDCLNT_SHAREMODE_SHARED,AUDCLNT_STREAMFLAGS_LOOPBACK|AUDCLNT_STREAMFLAGS_EVENTCALLBACK|AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,0,0,&format,nullptr);
     if(FAILED(result))return fail("Initialize",result);
     HANDLE event=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!event)return 2;
@@ -87,35 +88,40 @@ int wmain(int argc,wchar_t** argv){
     ComPtr<IAudioCaptureClient> capture;result=activation->client->GetService(IID_PPV_ARGS(&capture));if(FAILED(result))return fail("Capture",result);
     result=activation->client->Start();if(FAILED(result))return fail("Start",result);
     std::fprintf(stderr,"Spotify process-loopback ready pid=%lu sample-rate=44100 include-tree\n",static_cast<unsigned long>(pid));
-    std::array<float,N> ring{};std::array<std::complex<float>,N> spectrum{};std::array<float,N> hann{};
+    std::array<float,N> ring{};std::array<std::complex<float>,N> spectrum{};std::array<float,N> hann{};BassEnvelope bassEnvelope;LevelEnvelope levelEnvelope;
     for(int i=0;i<N;i++)hann[i]=static_cast<float>(0.5-0.5*std::cos(2*PI*i/(N-1)));
     int write=0;ULONGLONG lastPacket=GetTickCount64(),lastFrame=GetTickCount64();Packet packet;
     HANDLE waits[]={event,target};HANDLE output=GetStdHandle(STD_OUTPUT_HANDLE);bool running=true;
     while(running){
-        DWORD wait=WaitForMultipleObjects(2,waits,FALSE,20);if(wait==WAIT_OBJECT_0+1||wait==WAIT_FAILED)break;
+        DWORD wait=WaitForMultipleObjects(2,waits,FALSE,10);if(wait==WAIT_OBJECT_0+1||wait==WAIT_FAILED)break;
         UINT32 count=0;result=capture->GetNextPacketSize(&count);if(FAILED(result))break;
         while(count){
             BYTE* data=nullptr;UINT32 frames=0;DWORD flags=0;result=capture->GetBuffer(&data,&frames,&flags,nullptr,nullptr);if(FAILED(result)){running=false;break;}
-            const auto* samples=reinterpret_cast<const int16_t*>(data);
-            for(UINT32 i=0;i<frames;i++){const float sample=(flags&AUDCLNT_BUFFERFLAGS_SILENT)?0.0f:(static_cast<float>(samples[i*2])+samples[i*2+1])/65536.0f;ring[write]=sample;write=(write+1)%N;}
+            const auto* samples=reinterpret_cast<const float*>(data);
+            for(UINT32 i=0;i<frames;i++){
+                float sample=(flags&AUDCLNT_BUFFERFLAGS_SILENT)?0.0f:(samples[i*2]+samples[i*2+1])*0.5f;
+                if(!std::isfinite(sample))sample=0;
+                bassEnvelope.process(sample);levelEnvelope.process(sample);ring[write]=sample;write=(write+1)%N;
+            }
             capture->ReleaseBuffer(frames);lastPacket=GetTickCount64();capture->GetNextPacketSize(&count);
         }
-        const ULONGLONG now=GetTickCount64();if(now-lastFrame<20)continue;lastFrame=now;
-        double sum=0;const bool fresh=now-lastPacket<50;
+        const ULONGLONG now=GetTickCount64();if(now-lastFrame<10)continue;lastFrame=now;
+        const bool fresh=now-lastPacket<30;
         // Normalize before byte quantization. The reference is this live music
         // window's peak, not endpoint volume or a smoothed/outlier-filtered wave.
         float peak=0;for(int i=0;i<N;i++){const float sample=fresh?ring[(write+i)%N]:0.0f;peak=std::max(peak,std::abs(sample));}
-        double recentPower=0;for(int i=0;i<512;i++){const float sample=fresh?ring[(write+N-1-i)%N]:0.0f;recentPower+=sample*sample;}
-        const float recentRms=static_cast<float>(std::sqrt(recentPower/512));
-        // A real silent tail must not keep drawing the old 46ms FFT window.
-        const float gain=peak>=0.0001f&&recentRms>=0.00005f?0.88f/peak:0.0f;
+        double recentPower=0;for(int i=0;i<256;i++){const int at=(write+N-1-i)%N;const float sample=fresh?ring[at]:0.0f;recentPower+=sample*sample;}
+        const float recentRms=static_cast<float>(std::sqrt(recentPower/256));
+        // Float capture preserves quiet music. Silence is an actual empty PCM
+        // tail, not a fixed loudness gate that chatters at low Windows volume.
+        const float gain=peak>1e-8f&&recentRms>1e-9f?0.88f/peak:0.0f;
         packet.musicRms=gain>0?recentRms:0.0f;packet.musicPeak=gain>0?peak:0.0f;
-        for(int i=0;i<N;i++){float sample=(fresh?ring[(write+i)%N]:0.0f)*gain;sum+=sample*sample;packet.wave[i]=static_cast<uint8_t>(std::clamp(128+static_cast<int>(sample*127),0,255));spectrum[i]={sample*hann[i],0};}
-        packet.rms=static_cast<float>(std::sqrt(sum/N));fft(spectrum);
-        // Kick/body band before logarithmic byte quantization. Retain raw
-        // envelope as well as the volume-normalized band for visual consumers.
-        double bassPower=0;for(int i=1;i<=7;i++){const double amplitude=std::abs(spectrum[i])*2/N;const double weight=i==1?0.4:i==7?0.35:1.0;bassPower+=amplitude*amplitude*weight;}
-        packet.bassAmplitude=static_cast<float>(std::clamp(std::sqrt(bassPower*4/3),0.0,1.0));packet.bassRms=gain>0?packet.bassAmplitude/gain:0.0f;
+        for(int i=0;i<N;i++){float sample=(fresh?ring[(write+i)%N]:0.0f)*gain;packet.wave[i]=static_cast<uint8_t>(std::clamp(128+static_cast<int>(sample*127),0,255));spectrum[i]={sample*hann[i],0};}
+        packet.rms=std::clamp(levelEnvelope.rms()*gain,0.0f,1.0f);fft(spectrum);
+        // The short causal power envelope suppresses individual bass cycles
+        // so a sustained note cannot masquerade as repeated kick onsets.
+        packet.bassRms=gain>0?bassEnvelope.rms():0.0f;
+        packet.bassAmplitude=std::clamp(packet.bassRms*gain*2.0f,0.0f,1.0f);
         for(int i=0;i<BINS;i++){float db=20*std::log10(std::max(std::abs(spectrum[i])*2/N,1e-9f));packet.frequency[i]=static_cast<uint8_t>(std::clamp((db+90)/70,0.0f,1.0f)*255);}
         packet.bass=0;for(int i=2;i<22;i++)packet.bass+=packet.frequency[i]/255.0f/20;
         packet.treble=0;for(int i=70;i<180;i++)packet.treble+=packet.frequency[i]/255.0f/110;
